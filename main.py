@@ -10,8 +10,8 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
-WEBHOOK_URL = os.getenv("WEBHOOK_URL") + WEBHOOK_PATH
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://rowsafety-bot.onrender.com
+WEBHOOK_PATH = "/webhook"
 
 app = FastAPI()
 tg_app = Application.builder().token(BOT_TOKEN).build()
@@ -61,4 +61,5 @@ async def telegram_webhook(request: Request):
 @app.on_event("startup")
 async def on_startup():
     await tg_app.initialize()
-    await tg_app.bot.set_webhook(WEBHOOK_URL)
+    await tg_app.start()  # 🔥 ขาดบรรทัดนี้ไม่ได้
+    await tg_app.bot.set_webhook(f"{WEBHOOK_URL}{WEBHOOK_PATH}")
