@@ -24,10 +24,16 @@ WEBHOOK_PATH = "/webhook"
 
 # ================= GOOGLE SHEET =================
 creds_dict = json.loads(GOOGLE_CREDS_JSON)
-scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+
+scopes = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+
 creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
 gc = gspread.authorize(creds)
 sheet = gc.open("ROW_SAFETY_LOG").sheet1
+
 
 # ================= TELEGRAM =================
 app = FastAPI()
@@ -111,3 +117,4 @@ async def telegram_webhook(request: Request):
 async def on_startup():
     await tg_app.initialize()
     await tg_app.bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
+
