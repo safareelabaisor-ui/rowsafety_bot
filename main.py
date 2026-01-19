@@ -1,65 +1,51 @@
 import os
 import json
-from datetime import datetime
+import datetime
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
+    Application, CommandHandler, MessageHandler,
+    ContextTypes, filters
 )
 
-# ================= CONFIG =================
+import gspread
+from google.oauth2.service_account import Credentials
+
+# ================== ENV ==================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BASE_URL = os.getenv("WEBHOOK_URL")  # https://rowsafety-bot.onrender.com
-WEBHOOK_PATH = f"/webhook"
+WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = BASE_URL + WEBHOOK_PATH
 
-LOG_DIR = "logs"
-LOG_FILE = f"{LOG_DIR}/work_log.jsonl"
+SHEET_NAME = "ROW_SAFETY_LOG"
 
-os.makedirs(LOG_DIR, exist_ok=True)
+# ================== Google Sheet ==================
+creds_dict = json.loads(os.getenv("GOOGLE_CREDS_JSON"))
+scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+gc = gspread.authorize(creds)
+sheet = gc.open(SHEET_NAME).sheet1
 
-# ================= APP =================
+# ================== FastAPI + Telegram ==================
 app = FastAPI()
 tg_app = Application.builder().token(BOT_TOKEN).build()
 
-# ================= ANTI DUPLICATE =================
-processed_updates = set()
-MAX_CACHE = 1000
+last_message = {}  # กันข้อความซ้ำ
 
-def is_duplicate(update_id: int) -> bool:
-    if update_id in processed_updates:
-        return True
-    processed_updates.add(update_id)
-    if len(processed_updates) > MAX_CACHE:
-        processed_updates.pop()
-    return False
+def log_to_sheet(user, text):
+    sheet.append_row([
+        datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        user,
+        text
+    ])
 
-# ================= LOGGER =================
-def save_log(user_id: int, text: str, msg_type: str):
-    log = {
-        "time": datetime.utcnow().isoformat(),
-        "user_id": user_id,
-        "type": msg_type,
-        "text": text,
-    }
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(log, ensure_ascii=False) + "\n")
-
-# ================= HANDLERS =================
+# ================== Handlers ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    save_log(update.effective_user.id, "/start", "command")
     await update.message.reply_text(
-        "⚡ ROW Safety AI Bot\n"
-        "พิมพ์คำถามหน้างานได้เลย\n"
-        "หรือพิมพ์ EMERGENCY"
+        "⚡ ROW Safety AI Bot\nพิมพ์คำถามหน้างาน หรือ EMERGENCY"
     )
 
 async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    save_log(update.effective_user.id, "EMERGENCY", "command")
     await update.message.reply_text(
         "🚨 EMERGENCY MODE\n"
         "1) หยุดงานทันที\n"
@@ -68,8 +54,15 @@ async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()
-    save_log(update.effective_user.id, text, "message")
+    uid = update.effective_user.id
+    text = update.message.text.strip()
+
+    # กันข้อความซ้ำ
+    if last_message.get(uid) == text:
+        return
+    last_message[uid] = text
+
+    log_to_sheet(update.effective_user.username or uid, text)
 
     if "ฝน" in text:
         await update.message.reply_text(
@@ -84,27 +77,15 @@ tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("emergency", emergency))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
 
-# ================= WEBHOOK =================
+# ================== Webhook ==================
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, tg_app.bot)
-
-    if update and update.update_id:
-        if is_duplicate(update.update_id):
-            return {"ok": True}
-
-        await tg_app.process_update(update)
-
+    await tg_app.process_update(update)
     return {"ok": True}
 
-# ================= STARTUP =================
 @app.on_event("startup")
 async def on_startup():
     await tg_app.initialize()
     await tg_app.bot.set_webhook(WEBHOOK_URL)
-
-# ================= HEALTH CHECK =================
-@app.get("/")
-async def root():
-    return {"status": "ROW Safety Bot running"}
