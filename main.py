@@ -24,62 +24,35 @@ WEBHOOK_PATH = "/webhook"
 
 # ================= GOOGLE SHEET =================
 creds_dict = json.loads(GOOGLE_CREDS_JSON)
-
-scopes = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-]
-
+scopes = ["https://www.googleapis.com/auth/spreadsheets"]
 creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
 gc = gspread.authorize(creds)
 sheet = gc.open("ROW_SAFETY_LOG").sheet1
 
-# ================= FASTAPI =================
+# ================= TELEGRAM =================
 app = FastAPI()
 tg_app = Application.builder().token(BOT_TOKEN).build()
 
-# ================= กันข้อความซ้ำ =================
-LAST_UPDATE_ID = set()
-
-def is_duplicate(update_id: int) -> bool:
-    if update_id in LAST_UPDATE_ID:
-        return True
-    LAST_UPDATE_ID.add(update_id)
-    if len(LAST_UPDATE_ID) > 1000:
-        LAST_UPDATE_ID.clear()
-    return False
-
 # ================= LOG =================
-def log_to_sheet(username, chat_id, message, location="-"):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sheet.append_row([now, username, chat_id, message, location])
+def log_to_sheet(time, username, chat_id, message, location="-"):
+    sheet.append_row([time, username, chat_id, message, location])
+
+def now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # ================= HANDLERS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_duplicate(update.update_id):
-        return
-
     user = update.effective_user.username or "unknown"
     chat_id = update.effective_chat.id
-
-    log_to_sheet(user, chat_id, "/start")
-
+    log_to_sheet(now(), user, chat_id, "/start")
     await update.message.reply_text(
-        "⚡ ROW Safety AI Bot\n"
-        "พิมพ์สถานการณ์หน้างาน\n"
-        "หรือพิมพ์ EMERGENCY\n"
-        "📍 สามารถส่ง Location ได้"
+        "⚡ ROW Safety AI Bot\nพิมพ์สถานการณ์หน้างาน หรือกด 📎 ส่ง Location"
     )
 
 async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_duplicate(update.update_id):
-        return
-
     user = update.effective_user.username or "unknown"
     chat_id = update.effective_chat.id
-
-    log_to_sheet(user, chat_id, "EMERGENCY")
-
+    log_to_sheet(now(), user, chat_id, "EMERGENCY")
     await update.message.reply_text(
         "🚨 EMERGENCY MODE\n"
         "1) หยุดงานทันที\n"
@@ -87,53 +60,44 @@ async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "3) ติดต่อผู้ควบคุมงาน"
     )
 
-# ===== ข้อความธรรมดา =====
-async def reply_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_duplicate(update.update_id):
-        return
-
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user = update.effective_user.username or "unknown"
     chat_id = update.effective_chat.id
 
-    log_to_sheet(user, chat_id, text)
+    log_to_sheet(now(), user, chat_id, text)
 
     if "ฝน" in text:
-        await update.message.reply_text(
-            "⚠️ ฝนตก: ห้ามทำงานใกล้สายไฟแรงสูง"
-        )
+        await update.message.reply_text("⚠️ ฝนตก: ห้ามทำงานใกล้สายไฟแรงสูง")
+    elif "พิกัด" in text:
+        await update.message.reply_text("📍 กด 📎 → Location → Send location")
     else:
-        await update.message.reply_text(
-            "รับทราบ กำลังประเมินสถานการณ์หน้างาน"
-        )
+        await update.message.reply_text("รับทราบ กำลังประเมินสถานการณ์หน้างาน")
 
-# ===== รับ Location =====
-async def reply_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_duplicate(update.update_id):
-        return
-
+async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loc = update.message.location
     user = update.effective_user.username or "unknown"
     chat_id = update.effective_chat.id
-
-    location_text = f"{loc.latitude},{loc.longitude}"
+    location = f"{loc.latitude},{loc.longitude}"
 
     log_to_sheet(
-        user=user,
-        chat_id=chat_id,
-        message="ส่งพิกัดหน้างาน",
-        location=location_text
+        now(),
+        user,
+        chat_id,
+        "ส่งพิกัดหน้างาน",
+        location
     )
 
+    maps_link = f"https://maps.google.com/?q={loc.latitude},{loc.longitude}"
     await update.message.reply_text(
-        f"📍 รับพิกัดแล้ว\nLat: {loc.latitude}\nLng: {loc.longitude}"
+        f"📍 รับพิกัดเรียบร้อย\n{maps_link}"
     )
 
 # ================= REGISTER =================
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("emergency", emergency))
-tg_app.add_handler(MessageHandler(filters.LOCATION, reply_location))
-tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply_text))
+tg_app.add_handler(MessageHandler(filters.LOCATION, location_handler))
+tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
 # ================= WEBHOOK =================
 @app.post(WEBHOOK_PATH)
