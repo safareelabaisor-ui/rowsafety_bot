@@ -16,21 +16,14 @@ from telegram.ext import (
 import gspread
 from google.oauth2.service_account import Credentials
 
-# ==================================================
-# ENV
-# ==================================================
+# ================= ENV =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")          # https://xxxx.onrender.com
 GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
-if not BOT_TOKEN or not WEBHOOK_URL or not GOOGLE_CREDS_JSON:
-    raise RuntimeError("Missing ENV variables")
-
 WEBHOOK_PATH = "/webhook"
 
-# ==================================================
-# GOOGLE SHEET
-# ==================================================
+# ================= GOOGLE SHEET =================
 creds_dict = json.loads(GOOGLE_CREDS_JSON)
 
 scopes = [
@@ -42,22 +35,15 @@ creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
 gc = gspread.authorize(creds)
 
 sheet = gc.open("ROW_SAFETY_LOG").sheet1
-# คอลัมน์:
-# เวลา | user | chat_id | text | location | province | district
 
-# ==================================================
-# FASTAPI + TELEGRAM
-# ==================================================
+# ================= FASTAPI + TELEGRAM =================
 app = FastAPI()
 tg_app = Application.builder().token(BOT_TOKEN).build()
 
-# ==================================================
-# UTIL
-# ==================================================
+# ================= UTIL =================
 async def reverse_geocode(lat: float, lon: float):
     """
-    แปลง lat/lng -> จังหวัด/อำเภอ
-    ❗ มี try/except กัน bot ล้ม
+    แปลง lat/lon → จังหวัด / อำเภอ (รองรับประเทศไทย)
     """
     url = "https://nominatim.openstreetmap.org/reverse"
     params = {
@@ -79,15 +65,16 @@ async def reverse_geocode(lat: float, lon: float):
 
         province = (
             addr.get("province")
-            or addr.get("state")
+            or addr.get("state")          # จังหวัด (TH)
             or addr.get("region")
             or "ไม่ทราบจังหวัด"
         )
 
         district = (
-            addr.get("county")
+            addr.get("county")            # อำเภอ (TH)
             or addr.get("state_district")
             or addr.get("district")
+            or addr.get("city")
             or "ไม่ทราบอำเภอ"
         )
 
@@ -98,16 +85,9 @@ async def reverse_geocode(lat: float, lon: float):
         return "ไม่ทราบจังหวัด", "ไม่ทราบอำเภอ"
 
 
-def log_row(
-    user: str,
-    chat_id: int,
-    text: str,
-    location: str = "",
-    province: str = "",
-    district: str = "",
-):
+def log_row(user, chat_id, text, location="", province="", district=""):
     """
-    เขียน log ลง Google Sheet
+    บันทึกข้อมูลลง Google Sheet
     """
     sheet.append_row([
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -119,9 +99,8 @@ def log_row(
         district,
     ])
 
-# ==================================================
-# HANDLERS
-# ==================================================
+
+# ================= HANDLERS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.username or "unknown"
     chat_id = update.effective_chat.id
@@ -129,9 +108,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_row(user, chat_id, "/start")
 
     await update.message.reply_text(
-        "⚡ ROW Safety Bot\n\n"
-        "พิมพ์สถานการณ์หน้างาน\n"
-        "หรือส่ง Location 📍\n\n"
+        "⚡ ROW Safety Bot\n"
+        "พิมพ์สถานการณ์หน้างาน หรือส่ง Location 📍\n"
         "พิมพ์ EMERGENCY เมื่อเกิดเหตุฉุกเฉิน"
     )
 
@@ -159,7 +137,7 @@ async def text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if "ฝน" in text:
         await update.message.reply_text(
-            "⚠️ ฝนตก: ไม่ควรทำงานใกล้สายไฟแรงสูง"
+            "⚠️ ฝนตก: ห้ามทำงานใกล้สายไฟแรงสูง"
         )
     else:
         await update.message.reply_text(
@@ -187,23 +165,20 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(
-        "📍 รับตำแหน่งหน้างานแล้ว\n"
-        f"พิกัด: {lat:.6f}, {lon:.6f}\n"
+        f"📍 รับตำแหน่งหน้างานแล้ว\n"
+        f"พิกัด: {lat}, {lon}\n"
         f"จังหวัด: {province}\n"
         f"อำเภอ: {district}"
     )
 
-# ==================================================
-# REGISTER HANDLERS
-# ==================================================
+
+# ================= REGISTER HANDLERS =================
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("emergency", emergency))
 tg_app.add_handler(MessageHandler(filters.LOCATION, handle_location))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_reply))
 
-# ==================================================
-# WEBHOOK
-# ==================================================
+# ================= WEBHOOK =================
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
     data = await request.json()
