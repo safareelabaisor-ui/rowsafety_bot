@@ -3,4 +3,4 @@ fastapi
 uvicorn
 gspread
 google-auth
-requests
+httpx
