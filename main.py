@@ -135,6 +135,37 @@ async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2) ถอยออกจากแนวสายไฟ\n"
         "3) ติดต่อผู้ควบคุมงาน"
     )
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📖 วิธีใช้งาน ROW Safety Bot\n\n"
+        "/start – เริ่มต้นใช้งาน\n"
+        "/emergency – เหตุฉุกเฉิน\n"
+        "/danger – อันตรายใกล้สายไฟ\n"
+        "/safezone – ระยะปลอดภัย\n"
+        "/weather – ฝน/พายุ\n"
+        "/machine – เครื่องจักร/เครน\n\n"
+        "หรือพิมพ์คำถามเป็นข้อความได้เลย"
+    )
+
+async def cmd_from_kb(update: Update, context: ContextTypes.DEFAULT_TYPE, keyword: str):
+    answer = search_knowledge(keyword)
+    if answer:
+        await update.message.reply_text(f"📘 จากคู่มือ:\n{answer}")
+    else:
+        await update.message.reply_text("❌ ไม่พบข้อมูลในคู่มือ")
+
+async def danger_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await cmd_from_kb(update, context, "อันตราย")
+
+async def safezone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await cmd_from_kb(update, context, "ระยะปลอดภัย")
+
+async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await cmd_from_kb(update, context, "ฝน")
+
+async def machine_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await cmd_from_kb(update, context, "เครื่องจักร")
+
 
 async def text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
