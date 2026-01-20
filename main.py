@@ -52,21 +52,20 @@ def load_knowledge():
 
 def search_knowledge(user_text: str):
     user_text = user_text.lower()
-    records = kb_sheet.get_all_records()
+    knowledge = load_knowledge()
 
-    for row in records:
-        if not row["keywords"]:
+    for item in knowledge:
+        keywords = item.get("keywords")
+        answer = item.get("answer")
+
+        if not keywords or not answer:
             continue
-        for kw in row["keywords"].split(","):
-            if kw.strip().lower() in user_text:
-                return (
-                    f"📘 {row['question']}\n\n"
-                    f"{row['answer']}\n\n"
-                    f"⚠️ ระดับความเสี่ยง: {row['risk_level']}\n"
-                    f"📄 อ้างอิง: {row['reference']}"
-                )
-    return None
 
+        for kw in keywords.split(","):
+            if kw.strip().lower() in user_text:
+                return answer
+
+    return None
 
 # ================= UTIL =================
 async def reverse_geocode(lat: float, lon: float):
