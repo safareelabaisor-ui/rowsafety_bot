@@ -105,7 +105,7 @@ async def reverse_geocode(lat: float, lon: float):
 
 def log_row(user, chat_id, text, location="", province="", district=""):
     log_sheet.append_row([
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S (TH)"),
         user,
         chat_id,
         text,
