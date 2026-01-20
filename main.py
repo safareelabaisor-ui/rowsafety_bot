@@ -112,7 +112,9 @@ def log_row(user, chat_id, text, location="", province="", district=""):
         location,
         province,
         district,
-    ])
+    ],
+    value_input_option="USER_ENTERED"
+    )
 
 # ================= HANDLERS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
