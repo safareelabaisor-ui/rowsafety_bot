@@ -104,10 +104,8 @@ async def reverse_geocode(lat: float, lon: float):
         return "ไม่ทราบจังหวัด", "ไม่ทราบอำเภอ"
 
 def log_row(user, chat_id, text, location="", province="", district=""):
-    thai_time = datetime.now(timezone(timedelta(hours=7)))
-    
     log_sheet.append_row([
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        datetime.now()thai_time.strftime("%Y-%m-%d %H:%M:%S (TH)"),
         user,
         chat_id,
         text,
