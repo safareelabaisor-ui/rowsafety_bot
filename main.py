@@ -18,7 +18,7 @@ from google.oauth2.service_account import Credentials
 
 # ================= ENV =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")          # https://xxxx.onrender.com
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
 WEBHOOK_PATH = "/webhook"
@@ -34,17 +34,41 @@ scopes = [
 creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
 gc = gspread.authorize(creds)
 
-sheet = gc.open("ROW_SAFETY_LOG").sheet1
+log_sheet = gc.open("ROW_SAFETY_LOG").sheet1
+kb_sheet = gc.open("ROW_SAFETY_KNOWLEDGE").sheet1
 
 # ================= FASTAPI + TELEGRAM =================
 app = FastAPI()
 tg_app = Application.builder().token(BOT_TOKEN).build()
 
+# ================= KNOWLEDGE BASE =================
+knowledge_cache = []
+
+def load_knowledge():
+    global knowledge_cache
+    if not knowledge_cache:
+        knowledge_cache = kb_sheet.get_all_records()
+    return knowledge_cache
+
+def search_knowledge(user_text: str):
+    user_text = user_text.lower()
+    knowledge = load_knowledge()
+
+    for item in knowledge:
+        keywords = item.get("keywords")
+        answer = item.get("answer")
+
+        if not keywords or not answer:
+            continue
+
+        for kw in keywords.split(","):
+            if kw.strip().lower() in user_text:
+                return answer
+
+    return None
+
 # ================= UTIL =================
 async def reverse_geocode(lat: float, lon: float):
-    """
-    แปลง lat/lon → จังหวัด / อำเภอ (รองรับประเทศไทย)
-    """
     url = "https://nominatim.openstreetmap.org/reverse"
     params = {
         "lat": lat,
@@ -65,13 +89,13 @@ async def reverse_geocode(lat: float, lon: float):
 
         province = (
             addr.get("province")
-            or addr.get("state")          # จังหวัด (TH)
+            or addr.get("state")
             or addr.get("region")
             or "ไม่ทราบจังหวัด"
         )
 
         district = (
-            addr.get("county")            # อำเภอ (TH)
+            addr.get("county")
             or addr.get("state_district")
             or addr.get("district")
             or addr.get("city")
@@ -84,12 +108,8 @@ async def reverse_geocode(lat: float, lon: float):
         print("Reverse geocode error:", e)
         return "ไม่ทราบจังหวัด", "ไม่ทราบอำเภอ"
 
-
 def log_row(user, chat_id, text, location="", province="", district=""):
-    """
-    บันทึกข้อมูลลง Google Sheet
-    """
-    sheet.append_row([
+    log_sheet.append_row([
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         user,
         chat_id,
@@ -98,7 +118,6 @@ def log_row(user, chat_id, text, location="", province="", district=""):
         province,
         district,
     ])
-
 
 # ================= HANDLERS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,10 +128,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "⚡ ROW Safety Bot\n"
-        "พิมพ์สถานการณ์หน้างาน หรือส่ง Location 📍\n"
+        "พิมพ์คำถามจากคู่มือ หรือส่ง Location 📍\n"
         "พิมพ์ EMERGENCY เมื่อเกิดเหตุฉุกเฉิน"
     )
-
 
 async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.username or "unknown"
@@ -127,7 +145,6 @@ async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "3) ติดต่อผู้ควบคุมงาน"
     )
 
-
 async def text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user = update.effective_user.username or "unknown"
@@ -135,24 +152,15 @@ async def text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     log_row(user, chat_id, text)
 
-    # 🔍 ค้นจากคู่มือ
     answer = search_knowledge(text)
-
     if answer:
         await update.message.reply_text(f"📘 จากคู่มือหน่วย:\n{answer}")
         return
 
-    # fallback เดิม
     if "ฝน" in text:
-        await update.message.reply_text(
-            "⚠️ ฝนตก: ห้ามทำงานใกล้สายไฟแรงสูง"
-        )
+        await update.message.reply_text("⚠️ ฝนตก: ห้ามทำงานใกล้สายไฟแรงสูง")
     else:
-        await update.message.reply_text(
-            "รับทราบ หากต้องการข้อมูลเฉพาะ โปรดระบุรายละเอียดเพิ่ม"
-        )
-
-
+        await update.message.reply_text("รับทราบ หากต้องการข้อมูลเฉพาะ โปรดระบุเพิ่ม")
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loc = update.message.location
@@ -165,23 +173,21 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     province, district = await reverse_geocode(lat, lon)
 
     log_row(
-        user=user,
-        chat_id=chat_id,
-        text="LOCATION",
-        location=f"{lat},{lon}",
-        province=province,
-        district=district,
+        user,
+        chat_id,
+        "LOCATION",
+        f"{lat},{lon}",
+        province,
+        district,
     )
 
     await update.message.reply_text(
         f"📍 รับตำแหน่งหน้างานแล้ว\n"
-        f"พิกัด: {lat}, {lon}\n"
         f"จังหวัด: {province}\n"
         f"อำเภอ: {district}"
     )
 
-
-# ================= REGISTER HANDLERS =================
+# ================= REGISTER =================
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("emergency", emergency))
 tg_app.add_handler(MessageHandler(filters.LOCATION, handle_location))
@@ -195,38 +201,7 @@ async def telegram_webhook(request: Request):
     await tg_app.process_update(update)
     return {"ok": True}
 
-
 @app.on_event("startup")
 async def on_startup():
     await tg_app.initialize()
     await tg_app.bot.set_webhook(f"{WEBHOOK_URL}{WEBHOOK_PATH}")
-
-# ================= KNOWLEDGE BASE =================
-kb_sheet = gc.open("ROW_SAFETY_KNOWLEDGE").sheet1
-
-def load_knowledge():
-    """
-    โหลด Q&A ทั้งหมดจาก Google Sheet
-    """
-    records = kb_sheet.get_all_records()
-    return records
-
-def search_knowledge(user_text: str):
-    """
-    ค้นคำตอบจากฐานความรู้ด้วย keyword
-    """
-    user_text = user_text.lower()
-    knowledge = load_knowledge()
-
-    for item in knowledge:
-        keywords = item["keywords"]
-        if not keywords:
-            continue
-
-        for kw in keywords.split(","):
-            if kw.strip().lower() in user_text:
-                return item["answer"]
-
-    return None
-
-    
