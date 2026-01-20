@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, Request
@@ -18,10 +19,11 @@ from google.oauth2.service_account import Credentials
 
 # ================= ENV =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")          # https://xxxx.onrender.com
 GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
 WEBHOOK_PATH = "/webhook"
+TH_TZ = ZoneInfo("Asia/Bangkok")
 
 # ================= GOOGLE SHEET =================
 creds_dict = json.loads(GOOGLE_CREDS_JSON)
@@ -60,7 +62,6 @@ def search_knowledge(user_text: str):
             if kw.strip().lower() in user_text:
                 return f"{item['answer']}\n📌 อ้างอิง: {item.get('ref','')}"
     return None
-
 
 # ================= UTIL =================
 async def reverse_geocode(lat: float, lon: float):
@@ -104,16 +105,19 @@ async def reverse_geocode(lat: float, lon: float):
         return "ไม่ทราบจังหวัด", "ไม่ทราบอำเภอ"
 
 def log_row(user, chat_id, text, location="", province="", district=""):
-    log_sheet.append_row([
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        user,
-        chat_id,
-        text,
-        location,
-        province,
-        district,
-    ],
-    value_input_option="USER_ENTERED"
+    now_th = datetime.now(TH_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+    log_sheet.append_row(
+        [
+            now_th,
+            user,
+            chat_id,
+            text,
+            location,
+            province,
+            district,
+        ],
+        value_input_option="USER_ENTERED",
     )
 
 # ================= HANDLERS =================
@@ -126,6 +130,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "⚡ ROW Safety Bot\n"
         "พิมพ์คำถามจากคู่มือ หรือส่ง Location 📍\n"
+        "พิมพ์ /help เพื่อดูคำสั่ง\n"
         "พิมพ์ EMERGENCY เมื่อเกิดเหตุฉุกเฉิน"
     )
 
@@ -141,19 +146,21 @@ async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2) ถอยออกจากแนวสายไฟ\n"
         "3) ติดต่อผู้ควบคุมงาน"
     )
+
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📖 วิธีใช้งาน ROW Safety Bot\n\n"
-        "/start – เริ่มต้นใช้งาน\n"
+        "📖 คำสั่งที่ใช้งานได้\n\n"
+        "/start – เริ่มต้น\n"
+        "/help – วิธีใช้งาน\n"
         "/emergency – เหตุฉุกเฉิน\n"
         "/danger – อันตรายใกล้สายไฟ\n"
         "/safezone – ระยะปลอดภัย\n"
         "/weather – ฝน/พายุ\n"
-        "/machine – เครื่องจักร/เครน\n\n"
+        "/machine – เครื่องจักร\n\n"
         "หรือพิมพ์คำถามเป็นข้อความได้เลย"
     )
 
-async def cmd_from_kb(update: Update, context: ContextTypes.DEFAULT_TYPE, keyword: str):
+async def cmd_from_kb(update: Update, keyword: str):
     answer = search_knowledge(keyword)
     if answer:
         await update.message.reply_text(f"📘 จากคู่มือ:\n{answer}")
@@ -161,17 +168,16 @@ async def cmd_from_kb(update: Update, context: ContextTypes.DEFAULT_TYPE, keywor
         await update.message.reply_text("❌ ไม่พบข้อมูลในคู่มือ")
 
 async def danger_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await cmd_from_kb(update, context, "อันตราย")
+    await cmd_from_kb(update, "อันตราย")
 
 async def safezone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await cmd_from_kb(update, context, "ระยะปลอดภัย")
+    await cmd_from_kb(update, "ระยะปลอดภัย")
 
 async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await cmd_from_kb(update, context, "ฝน")
+    await cmd_from_kb(update, "ฝน")
 
 async def machine_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await cmd_from_kb(update, context, "เครื่องจักร")
-
+    await cmd_from_kb(update, "เครื่องจักร")
 
 async def text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -183,28 +189,26 @@ async def text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     answer = search_knowledge(text)
     if answer:
         await update.message.reply_text(f"📘 จากคู่มือหน่วย:\n{answer}")
-        return
-
-    if "ฝน" in text:
-        await update.message.reply_text("⚠️ ฝนตก: ห้ามทำงานใกล้สายไฟแรงสูง")
     else:
-        await update.message.reply_text("รับทราบ หากต้องการข้อมูลเฉพาะ โปรดระบุเพิ่ม")
+        await update.message.reply_text(
+            "รับทราบ หากต้องการข้อมูลเฉพาะ โปรดระบุเพิ่ม"
+        )
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loc = update.message.location
     user = update.effective_user.username or "unknown"
     chat_id = update.effective_chat.id
 
-    lat = loc.latitude
-    lon = loc.longitude
-
-    province, district = await reverse_geocode(lat, lon)
+    province, district = await reverse_geocode(
+        loc.latitude,
+        loc.longitude,
+    )
 
     log_row(
         user,
         chat_id,
         "LOCATION",
-        f"{lat},{lon}",
+        f"{loc.latitude},{loc.longitude}",
         province,
         district,
     )
@@ -217,14 +221,15 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= REGISTER =================
 tg_app.add_handler(CommandHandler("start", start))
-tg_app.add_handler(CommandHandler("emergency", emergency))
-tg_app.add_handler(MessageHandler(filters.LOCATION, handle_location))
-tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_reply))
 tg_app.add_handler(CommandHandler("help", help_cmd))
+tg_app.add_handler(CommandHandler("emergency", emergency))
 tg_app.add_handler(CommandHandler("danger", danger_cmd))
 tg_app.add_handler(CommandHandler("safezone", safezone_cmd))
 tg_app.add_handler(CommandHandler("weather", weather_cmd))
 tg_app.add_handler(CommandHandler("machine", machine_cmd))
+
+tg_app.add_handler(MessageHandler(filters.LOCATION, handle_location))
+tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_reply))
 
 # ================= WEBHOOK =================
 @app.post(WEBHOOK_PATH)
