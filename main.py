@@ -50,21 +50,12 @@ def load_knowledge():
         knowledge_cache = kb_sheet.get_all_records()
     return knowledge_cache
 
-def search_knowledge(user_text: str):
-    user_text = user_text.lower()
-    knowledge = load_knowledge()
-
-    for item in knowledge:
-        keywords = item.get("keywords")
-        answer = item.get("answer")
-
-        if not keywords or not answer:
-            continue
-
-        for kw in keywords.split(","):
-            if kw.strip().lower() in user_text:
-                return answer
-
+def search_knowledge(text: str):
+    text = text.lower()
+    for row in load_knowledge():
+        for kw in row["keywords"].split(","):
+            if kw.strip().lower() in text:
+                return f'{row["answer"]}\n📄 อ้างอิง: {row.get("ref","-")}'
     return None
 
 # ================= UTIL =================
