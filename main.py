@@ -135,14 +135,23 @@ async def text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     log_row(user, chat_id, text)
 
+    # 🔍 ค้นจากคู่มือ
+    answer = search_knowledge(text)
+
+    if answer:
+        await update.message.reply_text(f"📘 จากคู่มือหน่วย:\n{answer}")
+        return
+
+    # fallback เดิม
     if "ฝน" in text:
         await update.message.reply_text(
             "⚠️ ฝนตก: ห้ามทำงานใกล้สายไฟแรงสูง"
         )
     else:
         await update.message.reply_text(
-            "รับทราบ กำลังประเมินสถานการณ์หน้างาน"
+            "รับทราบ หากต้องการข้อมูลเฉพาะ โปรดระบุรายละเอียดเพิ่ม"
         )
+
 
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -191,3 +200,33 @@ async def telegram_webhook(request: Request):
 async def on_startup():
     await tg_app.initialize()
     await tg_app.bot.set_webhook(f"{WEBHOOK_URL}{WEBHOOK_PATH}")
+
+# ================= KNOWLEDGE BASE =================
+kb_sheet = gc.open("ROW_SAFETY_KNOWLEDGE").sheet1
+
+def load_knowledge():
+    """
+    โหลด Q&A ทั้งหมดจาก Google Sheet
+    """
+    records = kb_sheet.get_all_records()
+    return records
+
+def search_knowledge(user_text: str):
+    """
+    ค้นคำตอบจากฐานความรู้ด้วย keyword
+    """
+    user_text = user_text.lower()
+    knowledge = load_knowledge()
+
+    for item in knowledge:
+        keywords = item["keywords"]
+        if not keywords:
+            continue
+
+        for kw in keywords.split(","):
+            if kw.strip().lower() in user_text:
+                return item["answer"]
+
+    return None
+
+    
