@@ -214,6 +214,11 @@ tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("emergency", emergency))
 tg_app.add_handler(MessageHandler(filters.LOCATION, handle_location))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_reply))
+tg_app.add_handler(CommandHandler("help", help_cmd))
+tg_app.add_handler(CommandHandler("danger", danger_cmd))
+tg_app.add_handler(CommandHandler("safezone", safezone_cmd))
+tg_app.add_handler(CommandHandler("weather", weather_cmd))
+tg_app.add_handler(CommandHandler("machine", machine_cmd))
 
 # ================= WEBHOOK =================
 @app.post(WEBHOOK_PATH)
