@@ -131,7 +131,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚡ ROW Safety Bot\n"
         "พิมพ์คำถามจากคู่มือ หรือส่ง Location 📍\n"
         "พิมพ์ /help เพื่อดูคำสั่ง\n"
-        "พิมพ์ คู่มือ เพื่อหาดูข้อมูลทั้งหมด"
+        "พิมพ์ คู่มือ เพื่อหาข้อมูล"
         "พิมพ์ EMERGENCY เมื่อเกิดเหตุฉุกเฉิน"
     )
 
@@ -244,6 +244,7 @@ async def telegram_webhook(request: Request):
 async def on_startup():
     await tg_app.initialize()
     await tg_app.bot.set_webhook(f"{WEBHOOK_URL}{WEBHOOK_PATH}")
+
 
 
 
