@@ -19,23 +19,11 @@ from google.oauth2.service_account import Credentials
 
 # ================= ENV =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")          # https://xxxx.onrender.com
 GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
 WEBHOOK_PATH = "/webhook"
 TH_TZ = ZoneInfo("Asia/Bangkok")
-
-# ================= RISK KEYWORDS =================
-DANGER_KEYWORDS = [
-    "ฝน", "พายุ", "ฟ้าผ่า",
-    "เครน", "รถเครน",
-    "ตัดต้นไม้", "โค่นต้นไม้",
-]
-
-WARNING_KEYWORDS = [
-    "ใกล้สาย", "เครื่องจักร",
-    "รถ", "ยก", "ขุด", "เจาะ",
-]
 
 # ================= GOOGLE SHEET =================
 creds_dict = json.loads(GOOGLE_CREDS_JSON)
@@ -67,33 +55,24 @@ def load_knowledge():
 def search_knowledge(user_text: str):
     user_text = user_text.lower()
     for item in load_knowledge():
-        for kw in item.get("keywords", "").split(","):
+        keywords = item.get("keywords", "")
+        for kw in keywords.split(","):
             if kw.strip().lower() in user_text:
                 return f"{item['answer']}\n📌 อ้างอิง: {item.get('ref','')}"
     return None
 
-# ================= RISK ASSESS =================
+# ================= RISK ASSESSMENT =================
 def assess_risk(text: str):
     text = text.lower()
 
-    danger = any(k in text for k in DANGER_KEYWORDS)
-    warning = any(k in text for k in WARNING_KEYWORDS)
+    if "สายไฟ" in text and ("ฝน" in text or "พายุ" in text):
+        return "🔴 อันตรายสูง", "❌ หยุดงานทันที\n⚡ เสี่ยงไฟฟ้าดูด"
 
-    if danger:
-        return (
-            "🔴 อันตรายสูง",
-            "❌ หยุดงานทันที\n"
-            "⚡ เสี่ยงต่อสายไฟแรงสูง\n"
-            "📞 แจ้งหัวหน้างาน"
-        )
+    if "ตัดต้นไม้" in text and "สายไฟ" in text:
+        return "🔴 อันตรายสูง", "❌ ต้องเว้นระยะไม่น้อยกว่า 6 เมตร"
 
-    if warning:
-        return (
-            "🟡 เฝ้าระวัง",
-            "⚠️ ตรวจสอบระยะปลอดภัย\n"
-            "👷‍♂️ สวมอุปกรณ์ป้องกัน\n"
-            "👀 ควบคุมงานใกล้ชิด"
-        )
+    if "เครื่องจักร" in text or "เครน" in text:
+        return "🟡 เสี่ยงปานกลาง", "⚠️ ควบคุมระยะและมีผู้ควบคุมงาน"
 
     return "🟢 ปกติ", "✅ ยังไม่พบความเสี่ยงร้ายแรง"
 
@@ -116,22 +95,37 @@ async def reverse_geocode(lat: float, lon: float):
             data = r.json()
 
         addr = data.get("address", {})
-        province = addr.get("province") or addr.get("state") or "ไม่ทราบจังหวัด"
+
+        province = (
+            addr.get("province")
+            or addr.get("state")
+            or "ไม่ทราบจังหวัด"
+        )
+
         district = (
             addr.get("county")
             or addr.get("state_district")
-            or addr.get("district")
             or "ไม่ทราบอำเภอ"
         )
+
         return province, district
 
     except Exception:
         return "ไม่ทราบจังหวัด", "ไม่ทราบอำเภอ"
 
-def log_row(user, chat_id, text, location="", province="", district=""):
+def log_row(user, chat_id, text, location="", province="", district="", risk_level=""):
     now_th = datetime.now(TH_TZ).strftime("%Y-%m-%d %H:%M:%S")
     log_sheet.append_row(
-        [now_th, user, chat_id, text, location, province, district],
+        [
+            now_th,
+            user,
+            chat_id,
+            text,
+            location,
+            province,
+            district,
+            risk_level,
+        ],
         value_input_option="USER_ENTERED",
     )
 
@@ -139,6 +133,7 @@ def log_row(user, chat_id, text, location="", province="", district=""):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.username or "unknown"
     chat_id = update.effective_chat.id
+
     log_row(user, chat_id, "/start")
 
     await update.message.reply_text(
@@ -150,16 +145,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "พิมพ์ EMERGENCY เมื่อเกิดเหตุฉุกเฉิน"
     )
 
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📖 คำสั่งที่ใช้ได้\n\n"
-        "/start\n/help\n/emergency\n"
-        "/danger /safezone /weather /machine\n\n"
-        "หรือพิมพ์สถานการณ์หน้างานได้เลย"
-    )
-
 async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    log_row(update.effective_user.username, update.effective_chat.id, "EMERGENCY")
+    user = update.effective_user.username or "unknown"
+    chat_id = update.effective_chat.id
+
+    log_row(user, chat_id, "EMERGENCY", risk_level="🔴 อันตรายสูง")
+
     await update.message.reply_text(
         "🚨 EMERGENCY MODE\n"
         "1) หยุดงานทันที\n"
@@ -167,46 +158,84 @@ async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "3) ติดต่อผู้ควบคุมงาน"
     )
 
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📖 คำสั่งที่ใช้งานได้\n\n"
+        "/start – เริ่มต้น\n"
+        "/help – วิธีใช้งาน\n"
+        "/emergency – เหตุฉุกเฉิน\n"
+        "/danger – อันตราย\n"
+        "/safezone – ระยะปลอดภัย\n"
+        "/weather – ฝน/พายุ\n"
+        "/machine – เครื่องจักร\n\n"
+        "หรือพิมพ์คำถามเป็นข้อความได้เลย"
+    )
+
+async def cmd_from_kb(update: Update, keyword: str):
+    answer = search_knowledge(keyword)
+    if answer:
+        await update.message.reply_text(f"📘 จากคู่มือ:\n{answer}")
+    else:
+        await update.message.reply_text("❌ ไม่พบข้อมูลในคู่มือ")
+
+async def danger_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await cmd_from_kb(update, "อันตราย")
+
+async def safezone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await cmd_from_kb(update, "ระยะปลอดภัย")
+
+async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await cmd_from_kb(update, "ฝน")
+
+async def machine_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await cmd_from_kb(update, "เครื่องจักร")
+
 async def text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user = update.effective_user.username or "unknown"
     chat_id = update.effective_chat.id
 
-    log_row(user, chat_id, text)
+    risk_level, risk_advice = assess_risk(text)
+
+    log_row(
+        user=user,
+        chat_id=chat_id,
+        text=text,
+        risk_level=risk_level,
+    )
 
     messages = []
 
-    # 1️⃣ ค้นจากคู่มือ
     kb = search_knowledge(text)
     if kb:
         messages.append(f"📘 จากคู่มือ:\n{kb}")
 
-    # 2️⃣ ประเมินความเสี่ยง
-    level, advice = assess_risk(text)
-    messages.append(
-        f"📊 ประเมินความเสี่ยง: {level}\n{advice}"
-    )
+    messages.append(f"📊 ประเมินความเสี่ยง: {risk_level}\n{risk_advice}")
 
-    # 3️⃣ รวมตอบครั้งเดียว
-    await update.message.reply_text(
-        "\n\n".join(messages)
-    )
+    await update.message.reply_text("\n\n".join(messages))
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loc = update.message.location
-    province, district = await reverse_geocode(loc.latitude, loc.longitude)
+    user = update.effective_user.username or "unknown"
+    chat_id = update.effective_chat.id
+
+    province, district = await reverse_geocode(
+        loc.latitude,
+        loc.longitude,
+    )
 
     log_row(
-        update.effective_user.username,
-        update.effective_chat.id,
+        user,
+        chat_id,
         "LOCATION",
         f"{loc.latitude},{loc.longitude}",
         province,
         district,
+        risk_level="📍 พิกัดหน้างาน",
     )
 
     await update.message.reply_text(
-        f"📍 ตำแหน่งหน้างาน\n"
+        f"📍 รับตำแหน่งหน้างานแล้ว\n"
         f"จังหวัด: {province}\n"
         f"อำเภอ: {district}"
     )
@@ -215,13 +244,19 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
 tg_app.add_handler(CommandHandler("start", start))
 tg_app.add_handler(CommandHandler("help", help_cmd))
 tg_app.add_handler(CommandHandler("emergency", emergency))
+tg_app.add_handler(CommandHandler("danger", danger_cmd))
+tg_app.add_handler(CommandHandler("safezone", safezone_cmd))
+tg_app.add_handler(CommandHandler("weather", weather_cmd))
+tg_app.add_handler(CommandHandler("machine", machine_cmd))
+
 tg_app.add_handler(MessageHandler(filters.LOCATION, handle_location))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_reply))
 
 # ================= WEBHOOK =================
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
-    update = Update.de_json(await request.json(), tg_app.bot)
+    data = await request.json()
+    update = Update.de_json(data, tg_app.bot)
     await tg_app.process_update(update)
     return {"ok": True}
 
