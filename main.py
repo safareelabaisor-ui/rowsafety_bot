@@ -171,16 +171,25 @@ async def text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user = update.effective_user.username or "unknown"
     chat_id = update.effective_chat.id
+
     log_row(user, chat_id, text)
 
+    messages = []
+
+    # 1️⃣ ค้นจากคู่มือ
     kb = search_knowledge(text)
     if kb:
-        await update.message.reply_text(f"📘 จากคู่มือ:\n{kb}")
-        return
+        messages.append(f"📘 จากคู่มือ:\n{kb}")
 
-    level, msg = assess_risk(text)
+    # 2️⃣ ประเมินความเสี่ยง
+    level, advice = assess_risk(text)
+    messages.append(
+        f"📊 ประเมินความเสี่ยง: {level}\n{advice}"
+    )
+
+    # 3️⃣ รวมตอบครั้งเดียว
     await update.message.reply_text(
-        f"📊 ประเมินความเสี่ยง: {level}\n\n{msg}"
+        "\n\n".join(messages)
     )
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
