@@ -141,43 +141,45 @@ async def reverse_geocode(lat: float, lon: float):
 
         addr = data.get("address", {})
 
-        village = (
-            addr.get("village")
-            or addr.get("hamlet")
-            or addr.get("neighbourhood")
-            or "-"
-        )
-
+        # 🇹🇭 Mapping สำหรับประเทศไทย (สำคัญ)
+        village = addr.get("village") or "-"
         subdistrict = (
-            addr.get("subdistrict")
-            or addr.get("suburb")
+            addr.get("suburb")
             or addr.get("town")
+            or addr.get("village")
             or "-"
         )
-
         district = (
             addr.get("county")
             or addr.get("city_district")
             or "-"
         )
-
         province = (
             addr.get("province")
             or addr.get("state")
             or "-"
         )
 
-        postcode = addr.get("postcode", "-")
-        country = addr.get("country", "-")
-
         return {
             "village": village,
             "subdistrict": subdistrict,
-            "district": district,
-            "province": province,
-            "postcode": postcode,
-            "country": country,
+            "district": district.replace("อำเภอ", "").strip(),
+            "province": province.replace("จังหวัด", "").strip(),
+            "postcode": addr.get("postcode", "-"),
+            "country": addr.get("country", "-"),
         }
+
+    except Exception as e:
+        print("Reverse geocode error:", e)
+        return {
+            "village": "-",
+            "subdistrict": "-",
+            "district": "-",
+            "province": "-",
+            "postcode": "-",
+            "country": "-",
+        }
+
 
     except Exception as e:
         print("Reverse geocode error:", e)
