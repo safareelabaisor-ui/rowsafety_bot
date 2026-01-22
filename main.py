@@ -106,7 +106,7 @@ async def reverse_geocode(lat: float, lon: float):
         "lat": lat,
         "lon": lon,
         "format": "json",
-        "zoom": 10,
+        "zoom": 18,
         "addressdetails": 1,
     }
     headers = {"User-Agent": "rowsafety-bot"}
@@ -119,25 +119,44 @@ async def reverse_geocode(lat: float, lon: float):
 
         addr = data.get("address", {})
 
-        province = (
-            addr.get("province")
-            or addr.get("state")
-            or "ไม่ทราบจังหวัด"
-        )
+        location_data = {
+            "village": addr.get("village", ""),
+            "subdistrict": addr.get("subdistrict", ""),
+            "district": addr.get("county", ""),
+            "province": addr.get("state", ""),
+            "postcode": addr.get("postcode", ""),
+            "country": addr.get("country", ""),
+        }
 
-        district = (
-            addr.get("county")
-            or addr.get("state_district")
-            or "ไม่ทราบอำเภอ"
-        )
+        return location_data
 
-        return province, district
+    except Exception as e:
+        print("Reverse geocode error:", e)
+        return {
+            "village": "",
+            "subdistrict": "",
+            "district": "",
+            "province": "",
+            "postcode": "",
+            "country": "",
+        }
 
-    except Exception:
-        return "ไม่ทราบจังหวัด", "ไม่ทราบอำเภอ"
 
-def log_row(user, chat_id, text, location="", province="", district="", risk_level=""):
+def log_row(
+    user,
+    chat_id,
+    text,
+    location="",
+    village="",
+    subdistrict="",
+    district="",
+    province="",
+    postcode="",
+    country="",
+    risk_level="",
+):
     now_th = datetime.now(TH_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
     log_sheet.append_row(
         [
             now_th,
@@ -145,8 +164,12 @@ def log_row(user, chat_id, text, location="", province="", district="", risk_lev
             chat_id,
             text,
             location,
-            province,
+            village,
+            subdistrict,
             district,
+            province,
+            postcode,
+            country,
             risk_level,
         ],
         value_input_option="USER_ENTERED",
@@ -242,29 +265,29 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.username or "unknown"
     chat_id = update.effective_chat.id
 
-    province, district = await reverse_geocode(
-        loc.latitude,
-        loc.longitude,
-    )
-
-    risk_level, risk_advice = assess_risk(is_location=True)
+    addr = await reverse_geocode(loc.latitude, loc.longitude)
 
     log_row(
         user=user,
         chat_id=chat_id,
         text="LOCATION",
         location=f"{loc.latitude},{loc.longitude}",
-        province=province,
-        district=district,
-        risk_level=risk_level,
+        village=addr["village"],
+        subdistrict=addr["subdistrict"],
+        district=addr["district"],
+        province=addr["province"],
+        postcode=addr["postcode"],
+        country=addr["country"],
+        risk_level="📍 พิกัดหน้างาน",
     )
 
     await update.message.reply_text(
-        f"📍 รับตำแหน่งหน้างานแล้ว\n"
-        f"จังหวัด: {province}\n"
-        f"อำเภอ: {district}\n\n"
-        f"📊 ประเมินความเสี่ยง: {risk_level}\n"
-        f"{risk_advice}"
+        "📍 รับตำแหน่งหน้างานแล้ว\n"
+        f"หมู่บ้าน: {addr['village']}\n"
+        f"ตำบล: {addr['subdistrict']}\n"
+        f"อำเภอ: {addr['district']}\n"
+        f"จังหวัด: {addr['province']}\n"
+        f"รหัสไปรษณีย์: {addr['postcode']}"
     )
 
 
