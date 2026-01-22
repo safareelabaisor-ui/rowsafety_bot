@@ -141,24 +141,55 @@ async def reverse_geocode(lat: float, lon: float):
 
         addr = data.get("address", {})
 
+        village = (
+            addr.get("village")
+            or addr.get("hamlet")
+            or addr.get("neighbourhood")
+            or "-"
+        )
+
+        subdistrict = (
+            addr.get("subdistrict")
+            or addr.get("suburb")
+            or addr.get("town")
+            or "-"
+        )
+
+        district = (
+            addr.get("county")
+            or addr.get("city_district")
+            or "-"
+        )
+
+        province = (
+            addr.get("province")
+            or addr.get("state")
+            or "-"
+        )
+
+        postcode = addr.get("postcode", "-")
+        country = addr.get("country", "-")
+
         return {
-            "village": addr.get("village", ""),
-            "subdistrict": addr.get("subdistrict", ""),
-            "district": addr.get("county", ""),
-            "province": addr.get("state", ""),
-            "postcode": addr.get("postcode", ""),
-            "country": addr.get("country", ""),
+            "village": village,
+            "subdistrict": subdistrict,
+            "district": district,
+            "province": province,
+            "postcode": postcode,
+            "country": country,
         }
 
-    except Exception:
+    except Exception as e:
+        print("Reverse geocode error:", e)
         return {
-            "village": "",
-            "subdistrict": "",
-            "district": "",
-            "province": "",
-            "postcode": "",
-            "country": "",
+            "village": "-",
+            "subdistrict": "-",
+            "district": "-",
+            "province": "-",
+            "postcode": "-",
+            "country": "-",
         }
+
 
 # ================= LOG =================
 def log_row(
