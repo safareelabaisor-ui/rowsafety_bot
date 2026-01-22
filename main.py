@@ -27,6 +27,7 @@ TH_TZ = ZoneInfo("Asia/Bangkok")
 
 # ================= GOOGLE SHEET =================
 creds_dict = json.loads(GOOGLE_CREDS_JSON)
+
 scopes = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -59,10 +60,9 @@ def search_knowledge(text: str):
                 return f"{item['answer']}\n📌 อ้างอิง: {item.get('ref','')}"
     return None
 
-# ================= RISK ENGINE =================
+# ================= AREA RISK CONFIG =================
 HIGH_RISK_DISTRICTS = [
     "อำเภอคลองหลวง",
-    "อำเภอบางปะอิน",
 ]
 
 HIGH_RISK_SUBDISTRICTS = [
@@ -70,24 +70,56 @@ HIGH_RISK_SUBDISTRICTS = [
     "คลองหนึ่ง",
 ]
 
-def assess_risk(text: str, subdistrict="", district=""):
+# ================= RISK ASSESSMENT =================
+def assess_risk(
+    text: str = "",
+    is_location: bool = False,
+    subdistrict: str = "",
+    district: str = "",
+):
     text = text.lower()
 
-    # พื้นที่เสี่ยง
+    # 🔴 พื้นที่เสี่ยง
     if district in HIGH_RISK_DISTRICTS or subdistrict in HIGH_RISK_SUBDISTRICTS:
-        return "🔴 อันตรายสูง", "พื้นที่เสี่ยงสูง ต้องขออนุญาตและควบคุมงานเข้มงวด"
+        return (
+            "🔴 อันตรายสูง",
+            "พื้นที่เสี่ยงเฉพาะ ต้องขออนุญาตและควบคุมงานเข้มงวด"
+        )
 
-    # กฎทั่วไป
-    if "สายไฟ" in text and ("ฝน" in text or "พายุ" in text):
-        return "🔴 อันตรายสูง", "หยุดงานทันที เสี่ยงไฟฟ้าดูด"
+    # 🔴 keyword เสี่ยงสูง
+    high_keywords = [
+        "สายไฟ", "ไฟแรงสูง", "พายุ", "ฝนตกหนัก",
+        "เครน", "รถเครน", "ตัดต้นไม้ใกล้สายไฟ"
+    ]
 
-    if "ตัดต้นไม้" in text and "สายไฟ" in text:
-        return "🔴 อันตรายสูง", "ต้องเว้นระยะไม่น้อยกว่า 6 เมตร"
+    for kw in high_keywords:
+        if kw in text:
+            return (
+                "🔴 อันตรายสูง",
+                "❌ หยุดงานทันที เสี่ยงไฟฟ้าดูด/ลัดวงจร"
+            )
 
-    if "เครื่องจักร" in text or "เครน" in text:
-        return "🟡 เสี่ยงปานกลาง", "ต้องมีผู้ควบคุมงานและกำหนดระยะปลอดภัย"
+    # 🟡 หน้างานจริง
+    if is_location:
+        return (
+            "🟡 เสี่ยงปานกลาง",
+            "เป็นหน้างานจริง ควรตรวจสอบแนวสายไฟและใช้ PPE"
+        )
 
-    return "🟢 ปกติ", "ยังไม่พบความเสี่ยงร้ายแรง"
+    # 🟡 keyword กลาง
+    medium_keywords = ["ฝน", "ลม", "เครื่องจักร", "รถบรรทุก"]
+    for kw in medium_keywords:
+        if kw in text:
+            return (
+                "🟡 เสี่ยงปานกลาง",
+                "เพิ่มการควบคุมงานและเว้นระยะปลอดภัย"
+            )
+
+    # 🟢 ปกติ
+    return (
+        "🟢 ปกติ",
+        "ยังไม่พบความเสี่ยงร้ายแรง ปฏิบัติตามมาตรฐานความปลอดภัย"
+    )
 
 # ================= GEO =================
 async def reverse_geocode(lat: float, lon: float):
@@ -175,7 +207,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help – วิธีใช้งาน\n"
         "/emergency – เหตุฉุกเฉิน\n"
         "พิมพ์ข้อความเพื่อประเมินความเสี่ยง\n"
-        "ส่ง Location เพื่อบันทึกพิกัด"
+        "ส่ง Location เพื่อประเมินพื้นที่"
     )
 
 async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -212,10 +244,11 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     addr = await reverse_geocode(loc.latitude, loc.longitude)
+
     risk, advice = assess_risk(
-        "",
-        addr["subdistrict"],
-        addr["district"],
+        is_location=True,
+        subdistrict=addr["subdistrict"],
+        district=addr["district"],
     )
 
     log_row(
