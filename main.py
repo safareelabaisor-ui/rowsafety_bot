@@ -62,19 +62,42 @@ def search_knowledge(user_text: str):
     return None
 
 # ================= RISK ASSESSMENT =================
-def assess_risk(text: str):
+def assess_risk(text: str = "", is_location: bool = False):
     text = text.lower()
 
-    if "สายไฟ" in text and ("ฝน" in text or "พายุ" in text):
-        return "🔴 อันตรายสูง", "❌ หยุดงานทันที\n⚡ เสี่ยงไฟฟ้าดูด"
+    # 🔴 HIGH
+    high_keywords = [
+        "สายไฟ", "ไฟแรงสูง", "พายุ", "ฝนตกหนัก",
+        "เครน", "รถเครน", "ตัดต้นไม้ใกล้สายไฟ"
+    ]
 
-    if "ตัดต้นไม้" in text and "สายไฟ" in text:
-        return "🔴 อันตรายสูง", "❌ ต้องเว้นระยะไม่น้อยกว่า 6 เมตร"
+    for kw in high_keywords:
+        if kw in text:
+            return (
+                "🔴 อันตรายสูง",
+                "❌ หยุดงานทันที\n⚡ เสี่ยงไฟฟ้าดูด/ไฟฟ้าลัดวงจร"
+            )
 
-    if "เครื่องจักร" in text or "เครน" in text:
-        return "🟡 เสี่ยงปานกลาง", "⚠️ ควบคุมระยะและมีผู้ควบคุมงาน"
+    # 🟡 MEDIUM
+    if is_location:
+        return (
+            "🟡 เสี่ยงปานกลาง",
+            "⚠️ เป็นหน้างานจริง\n• ควรตรวจสอบแนวสายไฟ\n• ใช้ PPE ครบ"
+        )
 
-    return "🟢 ปกติ", "✅ ยังไม่พบความเสี่ยงร้ายแรง"
+    medium_keywords = ["ฝน", "ลม", "เครื่องจักร", "รถบรรทุก"]
+    for kw in medium_keywords:
+        if kw in text:
+            return (
+                "🟡 เสี่ยงปานกลาง",
+                "⚠️ เพิ่มการควบคุมงานและเว้นระยะ"
+            )
+
+    # 🟢 LOW
+    return (
+        "🟢 ปกติ",
+        "✅ ยังไม่พบความเสี่ยงร้ายแรง\n• ปฏิบัติตามมาตรฐานความปลอดภัย"
+    )
 
 # ================= UTIL =================
 async def reverse_geocode(lat: float, lon: float):
@@ -224,21 +247,26 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loc.longitude,
     )
 
+    risk_level, risk_advice = assess_risk(is_location=True)
+
     log_row(
-        user,
-        chat_id,
-        "LOCATION",
-        f"{loc.latitude},{loc.longitude}",
-        province,
-        district,
-        risk_level="📍 พิกัดหน้างาน",
+        user=user,
+        chat_id=chat_id,
+        text="LOCATION",
+        location=f"{loc.latitude},{loc.longitude}",
+        province=province,
+        district=district,
+        risk_level=risk_level,
     )
 
     await update.message.reply_text(
         f"📍 รับตำแหน่งหน้างานแล้ว\n"
         f"จังหวัด: {province}\n"
-        f"อำเภอ: {district}"
+        f"อำเภอ: {district}\n\n"
+        f"📊 ประเมินความเสี่ยง: {risk_level}\n"
+        f"{risk_advice}"
     )
+
 
 # ================= REGISTER =================
 tg_app.add_handler(CommandHandler("start", start))
