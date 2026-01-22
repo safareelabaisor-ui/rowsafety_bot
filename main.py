@@ -227,16 +227,24 @@ def log_row(
 # ================= HANDLERS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "⚡ ROW Safety Bot\n"
+        "⚡ ROW Safety Bot ⚡\n"
         "พิมพ์สถานการณ์หน้างาน หรือส่ง Location 📍\n"
-        "พิมพ์ /help เพื่อดูคำสั่ง"
+        "พิมพ์ คู่มือ เพื่อเข้าดูข้อมูลเล่มแดง \n"
+        "พิมพ์ /help เพื่อดูคำสั่ง\n"
+        "พิมพ์ คู่มือ เพื่อหาข้อมูล\n"
+        "พิมพ์ EMERGENCY เมื่อเกิดเหตุฉุกเฉิน"
     )
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
+        "📖 คำสั่งที่ใช้งานได้\n\n"
         "/start – เริ่มต้น\n"
         "/help – วิธีใช้งาน\n"
         "/emergency – เหตุฉุกเฉิน\n"
+        "/danger – อันตราย\n"
+        "/weather – ฝน/พายุ\n"
+        "/machine – เครื่องจักร\n\n"
+        "/safezone – ระยะปลอดภัย\n"
         "พิมพ์ข้อความเพื่อประเมินความเสี่ยง\n"
         "ส่ง Location เพื่อประเมินพื้นที่"
     )
@@ -249,7 +257,11 @@ async def emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
         risk_level="🔴 อันตรายสูง",
     )
     await update.message.reply_text(
-        "🚨 EMERGENCY\nหยุดงานทันที และถอยออกจากแนวสายไฟ"
+        "🚨 EMERGENCY MODE\n"
+        "1) หยุดงานทันที\n"
+        "2) ถอยออกจากแนวสายไฟ\n"
+        "3) ติดต่อผู้ควบคุมงาน\n"
+        "🚨 EMERGENCY 🚨"
     )
 
 async def text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
