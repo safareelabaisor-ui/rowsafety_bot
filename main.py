@@ -336,3 +336,9 @@ async def telegram_webhook(request: Request):
 async def on_startup():
     await tg_app.initialize()
     await tg_app.bot.set_webhook(f"{WEBHOOK_URL}{WEBHOOK_PATH}")
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
